@@ -1,7 +1,8 @@
 use snappy;
 use std::cmp::min;
 use std::io::{self, Read};
-use std::iter::repeat;
+
+use buffer::Buffer;
 
 /// The largest allowable chunk size (uncompressed).
 const MAX_UNCOMPRESSED_CHUNK: usize = 65_536 + 4;
@@ -12,74 +13,11 @@ struct Chunk<'a> {
     data: &'a [u8]
 }
 
-/// An I/O buffer with various convenience functions.
-struct Buffer {
-    /// Our data.
-    buffer: Vec<u8>,
-    /// The start of the unread data in the buffer.
-    begin: usize,
-    /// The end of the unread data in the buffer.
-    end: usize
-}
-
-// Regular Buffer interface.
-impl Buffer {
-    fn new(sz: usize) -> Buffer {
-        Buffer{buffer: vec![0; sz], begin: 0, end: 0}
-    }
-    
-    fn capacity(&self) -> usize { self.buffer.len() }
-    fn buffered(&self) -> usize { self.end - self.begin }
-    fn empty(&self) -> bool { self.buffered() == 0 }
-
-    fn move_data_to_start(&mut self) {
-        if self.begin > 0 {
-            // TODO: Replace with a fast memmove routine.
-            for i in 0..self.buffered() {
-                self.buffer[i] = self.buffer[self.begin+i];
-            }
-            self.end = self.buffered();
-            self.begin = 0;
-        }
-    }
-
-    fn space_to_fill(&mut self) -> &mut [u8] {
-        &mut self.buffer[self.end..]
-    }
-
-    fn set_data(&mut self, data: &[u8]) {
-        // TODO: Replace with a memory copy routine.
-        for i in 0..data.len() {
-            self.buffer[i] = data[i];
-        }
-        self.begin = 0;
-        self.end = data.len();
-    }
-
-    fn added(&mut self, bytes: usize) {
-        self.end += bytes;
-    }
-
-    fn consume(&mut self, bytes: usize) -> &[u8] {
-        let result = &self.buffer[self.begin..self.begin+bytes];
-        self.begin += bytes;
-        result
-    }
-
-    fn copy_out_and_consume(&mut self, bytes: usize, dest: &mut [u8]) {
-        // TODO: Replace with a fast memcopy routine.
-        for i in 0..bytes {
-            dest[i] = self.buffer[self.begin+i];
-        }
-        self.begin += bytes;
-    }
-
-    fn add_capacity(&mut self, bytes: usize) {
-        self.buffer.extend(repeat(0).take(bytes));
-    }
-}
-
-// Local convenience functions attached to Buffer.
+// Add some input-related convenience functions to Buffer.  We can't put
+// these in the `SnappyFramedDecoder` itself because they return references
+// to our internal buffer, and thereby render it unavailable until we're
+// done.  But if we render `SnappyFramedDecoder` unavailable, we can't
+// write to our output buffer.  So it's better to keep this separate.
 impl Buffer {
     /// Make sure we have at least the specified number of bytes buffered.
     fn ensure_buffered<R: Read>(&mut self, bytes: usize, source: &mut R) ->
