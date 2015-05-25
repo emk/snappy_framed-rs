@@ -1,4 +1,5 @@
 use std::iter::repeat;
+use std::ptr::{copy, copy_nonoverlapping};
 
 /// An I/O buffer with various convenience functions.  This is an internal
 /// class, and the API is subject to change.
@@ -23,9 +24,10 @@ impl Buffer {
 
     pub fn move_data_to_start(&mut self) {
         if self.begin > 0 {
-            // TODO: Replace with a fast memmove routine.
-            for i in 0..self.buffered() {
-                self.buffer[i] = self.buffer[self.begin+i];
+            unsafe {
+                copy(self.buffer.as_ptr().offset(self.begin as isize),
+                     self.buffer.as_mut_ptr(),
+                     self.buffered());
             }
             self.end = self.buffered();
             self.begin = 0;
@@ -37,9 +39,12 @@ impl Buffer {
     }
 
     pub fn set_data(&mut self, data: &[u8]) {
-        // TODO: Replace with a memory copy routine.
-        for i in 0..data.len() {
-            self.buffer[i] = data[i];
+        assert!(data.len() <= self.buffer.len());
+        unsafe {
+            // HOTSPOT: Slow copies here have a drastic impact on performance.
+            copy_nonoverlapping(data.as_ptr(),
+                                self.buffer.as_mut_ptr(),
+                                data.len());
         }
         self.begin = 0;
         self.end = data.len();
@@ -56,9 +61,12 @@ impl Buffer {
     }
 
     pub fn copy_out_and_consume(&mut self, bytes: usize, dest: &mut [u8]) {
-        // TODO: Replace with a fast memcopy routine.
-        for i in 0..bytes {
-            dest[i] = self.buffer[self.begin+i];
+        assert!(bytes <= dest.len());
+        unsafe {
+            // HOTSPOT: Slow copies here have a drastic impact on performance.
+            copy_nonoverlapping(self.buffer.as_ptr().offset(self.begin as isize),
+                                dest.as_mut_ptr(),
+                                bytes);
         }
         self.begin += bytes;
     }
