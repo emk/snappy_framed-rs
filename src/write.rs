@@ -1,3 +1,5 @@
+//! Implementations of `Write` using Snappy compression.
+
 use snappy;
 use std::io::{self, Write};
 
@@ -9,11 +11,35 @@ const STREAM_IDENTIFIER: [u8; 10] =
     [0xFF, 0x06, 0x00, 0x00, 0x73, 0x4E, 0x61, 0x50, 0x70, 0x59];
 
 /// Encode a stream containing Snappy-compressed frames.
+///
+/// ```
+/// use std::io::{Cursor, Read, Write};
+/// use snappy_framed::read::{CrcMode, SnappyFramedDecoder};
+/// use snappy_framed::write::SnappyFramedEncoder;
+///
+/// // Compress it.
+/// let mut compressed = vec!();
+/// {
+///     let mut encoder = SnappyFramedEncoder::new(&mut compressed).unwrap();
+///     encoder.write(b"Hello!").unwrap();
+///     // Do not forget to flush!
+///     encoder.flush().unwrap();
+/// }
+///
+/// // Decompress it again.
+/// let mut cursor = Cursor::new(&compressed as &[u8]);
+/// let mut decoder = SnappyFramedDecoder::new(&mut cursor, CrcMode::Verify);
+/// let mut output = vec!();
+/// decoder.read_to_end(&mut output).unwrap();
+///
+/// assert_eq!(b"Hello!" as &[u8], &output as &[u8]);
+/// ```
 pub struct SnappyFramedEncoder<W: Write> {
     dest: W
 }
 
 impl<W: Write> SnappyFramedEncoder<W> {
+    /// Create a new encoder wrapping the specified `dest`.
     pub fn new(dest: W) -> io::Result<Self> {
         let mut encoder = SnappyFramedEncoder{dest: dest};
         try!(encoder.write_header());

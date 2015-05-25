@@ -1,3 +1,5 @@
+//! Implementations of `Read` using Snappy compression.
+
 use snappy;
 use std::cmp::min;
 use std::io::{self, Read};
@@ -9,7 +11,9 @@ use masked_crc::*;
 /// Should we verify or ignore the CRC when reading?
 #[derive(Debug, PartialEq, Eq)]
 pub enum CrcMode {
+    /// Verify that the CRC values in the stream are correct.
     Verify,
+    /// Ignore the CRC values.
     Ignore
 }
 
@@ -117,6 +121,23 @@ impl Buffer {
 }
 
 /// Decode a stream containing Snappy-compressed frames.
+///
+/// ```
+/// use std::io::{Cursor, Read};
+/// use snappy_framed::read::{CrcMode, SnappyFramedDecoder};
+///
+/// let compressed: &[u8] =
+///     &[0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59, 0x01,
+///       0x0a, 0x00, 0x00, 0xd3, 0xfe, 0x2e, 0x7a, 0x48, 0x65, 0x6c, 0x6c,
+///       0x6f, 0x21];
+/// let mut cursor = Cursor::new(&compressed as &[u8]);
+/// let mut decoder = SnappyFramedDecoder::new(&mut cursor, CrcMode::Verify);
+/// let mut output = vec!();
+/// decoder.read_to_end(&mut output).unwrap();
+///
+/// assert_eq!(b"Hello!", &output as &[u8]);
+/// ```
+
 pub struct SnappyFramedDecoder<R: Read> {
     source: R,
     input: Buffer,
@@ -125,6 +146,8 @@ pub struct SnappyFramedDecoder<R: Read> {
 }
 
 impl<R: Read> SnappyFramedDecoder<R> {
+    /// Create a new decoder wrapping the specified `source`, and using the
+    /// CRC verification options indicated by `mode`.
     pub fn new(source: R, mode: CrcMode) -> Self {
         SnappyFramedDecoder{
             source: source,
