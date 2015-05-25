@@ -271,7 +271,7 @@ mod benches {
 
     #[bench]
     fn decompress_speed(b: &mut Bencher) {
-        let data = large_compressed_data(50).unwrap();
+        let data = large_compressed_data(250).unwrap();
 
         let mut output_bytes = 0;
         let mut buffer = vec![0; 128*1024];
@@ -281,6 +281,8 @@ mod benches {
                 let mut cursor = Cursor::new(&data as &[u8]);
                 let mut decoder = SnappyFramedDecoder::new(&mut cursor,
                                                            CrcMode::Ignore);
+                // Avoid read_to_end here; it's too slow for large blocks
+                // of data.
                 loop {
                     let bytes_read = decoder.read(&mut buffer).unwrap();
                     output_bytes += bytes_read;
