@@ -33,9 +33,9 @@ impl<W: Write> Write for SnappyFramedEncoder<W> {
             let mut header_and_crc = [0; HEADER_SIZE+CRC_SIZE];
             let chunk_len = CRC_SIZE + compressed.len();
             header_and_crc[0] = 0;
-            header_and_crc[1] = (chunk_len & 0x0000FF) as u8;
-            header_and_crc[2] = (chunk_len & 0x00FF00 >> 16) as u8;
-            header_and_crc[3] = (chunk_len & 0xFF0000 >> 24) as u8;
+            header_and_crc[1] = ((chunk_len & 0x0000FF)) as u8;
+            header_and_crc[2] = ((chunk_len & 0x00FF00) >> 8) as u8;
+            header_and_crc[3] = ((chunk_len & 0xFF0000) >> 16) as u8;
             // TODO: Generate CRC.
             try!(self.dest.write_all(&header_and_crc));
 
@@ -67,8 +67,8 @@ fn encode_example_stream() {
         let mut compressor = SnappyFramedEncoder::new(&mut compressed).unwrap();
         let mut dribble = DribbleWriter::new(&mut compressor);
         let written = dribble.write(&expected).unwrap();
-        dribble.flush().unwrap();
         assert_eq!(expected.len(), written);
+        dribble.flush().unwrap();
     }
 
     let mut decompressed = vec!();

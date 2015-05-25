@@ -6,6 +6,7 @@ use buffer::Buffer;
 use consts::*;
 
 /// A framed chunk in a Snappy stream.
+#[derive(Debug)]
 struct Chunk<'a> {
     chunk_type: u8,
     data: &'a [u8]
@@ -70,7 +71,6 @@ impl Buffer {
             match try!(self.ensure_buffered(HEADER_SIZE, source)) {
                 None => return Ok(None),
                 Some(chunk_header) => {
-                    println!("shifted: {}", chunk_header[3] as usize);
                     (chunk_header[0],
                      ((chunk_header[3] as usize) << 16 |
                       (chunk_header[2] as usize) << 8 |
@@ -108,6 +108,7 @@ impl<R: Read> Read for SnappyFramedDecoder<R> {
                 match try!(self.input.next_chunk(&mut self.source)) {
                     None => return Ok(0),
                     Some(chunk) => {
+                        //println!("chunk: {:?}", chunk);
                         match chunk.chunk_type {
                             // Compressed data.
                             0x00 => {
@@ -167,3 +168,44 @@ fn decode_example_stream() {
 
     assert_eq!(expected, decompressed);
 }
+
+#[test]
+fn encode_and_decode_large_data() {
+    use std::fs::File;
+    use std::io::{Cursor, Write};
+
+    use write::SnappyFramedEncoder;
+
+    // Build a multi-MB vector containing text data.
+    let mut f = File::open("data/arbres.txt").unwrap();
+    let mut text = vec!();
+    f.read_to_end(&mut text).unwrap();
+    let repeat = 1000;
+    let mut input = Vec::with_capacity(text.len() * repeat);
+    for _ in 0..repeat { input.extend(text.iter().cloned()); }
+
+    // Compress it.
+    let mut compressed = vec!();
+    {
+        let mut compressor = SnappyFramedEncoder::new(&mut compressed).unwrap();
+        let written = compressor.write(&input).unwrap();
+        assert_eq!(input.len(), written);
+        compressor.flush().unwrap();
+    }
+
+    // Decode it.
+    let mut cursor = Cursor::new(&compressed as &[u8]);
+    let mut decompressor = SnappyFramedDecoder::new(&mut cursor);
+    let mut decompressed = vec!();
+    decompressor.read_to_end(&mut decompressed).unwrap();
+
+    // Decode it.
+    assert_eq!(input, decompressed);
+}
+
+// Test for invalid inputs:
+//   - No identifier chunk.
+//   - Incomplete chunks: All positions return errors.
+//   - Reserved chunk types.
+//   - Bad CRC.
+//   - Overlong chunks (both compressed--two variants--and uncompressed).
