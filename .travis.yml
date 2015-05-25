@@ -4,6 +4,9 @@ rust:
 - nightly
 - beta
 - 1.0.0
+before_install:
+- sudo apt-get update -qq
+- sudo apt-get install -qq libsnappy-dev
 before_script:
 - |
   pip install 'travis-cargo<0.2' --user &&
