@@ -3,9 +3,7 @@ use std::cmp::min;
 use std::io::{self, Read};
 
 use buffer::Buffer;
-
-/// The largest allowable chunk size (uncompressed).
-const MAX_UNCOMPRESSED_CHUNK: usize = 65_536 + 4;
+use consts::*;
 
 /// A framed chunk in a Snappy stream.
 struct Chunk<'a> {
@@ -69,7 +67,7 @@ impl Buffer {
         io::Result<Option<Chunk>>
     {
         let (chunk_type, chunk_len) = {
-            match try!(self.ensure_buffered(4, source)) {
+            match try!(self.ensure_buffered(HEADER_SIZE, source)) {
                 None => return Ok(None),
                 Some(chunk_header) => {
                     println!("shifted: {}", chunk_header[3] as usize);
@@ -86,7 +84,7 @@ impl Buffer {
     }    
 }
 
-/// Decode a stream containing `snappy`-compressed frames.
+/// Decode a stream containing Snappy-compressed frames.
 pub struct SnappyFramedDecoder<R: Read> {
     source: R,
     input: Buffer,
@@ -115,7 +113,7 @@ impl<R: Read> Read for SnappyFramedDecoder<R> {
                             0x00 => {
                                 // TODO: Output size check.
                                 // TODO: Malformed data check.
-                                let compressed = &chunk.data[4..];
+                                let compressed = &chunk.data[CRC_SIZE..];
                                 let data = snappy::uncompress(compressed)
                                     .expect("Snappy decompression failure");
                                 self.output.set_data(&data);
@@ -126,7 +124,7 @@ impl<R: Read> Read for SnappyFramedDecoder<R> {
                             0x01 => {
                                 // TODO: Output size check.
                                 // TODO: Malformed data check.
-                                let data = &chunk.data[4..];
+                                let data = &chunk.data[CRC_SIZE..];
                                 self.output.set_data(&data);
                                 break;
                             }
