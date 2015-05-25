@@ -4,12 +4,37 @@ use std::io::{self, Read};
 
 use buffer::Buffer;
 use consts::*;
+use masked_crc::*;
 
 /// A framed chunk in a Snappy stream.
 #[derive(Debug)]
 struct Chunk<'a> {
     chunk_type: u8,
     data: &'a [u8]
+}
+
+impl<'a> Chunk<'a> {
+    fn crc(&self) -> io::Result<u32> {
+        if self.data.len() < CRC_SIZE {
+            Err(io::Error::new(io::ErrorKind::Other, "Snappy CRC truncated"))
+        } else {
+            Ok((self.data[0] as u32) |
+               (self.data[1] as u32) << 8 |
+               (self.data[2] as u32) << 16 |
+               (self.data[3] as u32) << 24)
+        }
+    }
+}
+
+fn check_crc(expected: u32, data: &[u8]) -> io::Result<()> {
+    let actual = masked_crc(data);
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(io::Error::new(io::ErrorKind::Other,
+                           format!("Invalid Snappy CRC (expected {:x}, got {:x})",
+                                   expected, actual)))
+    }
 }
 
 // Add some input-related convenience functions to Buffer.  We can't put
@@ -114,9 +139,11 @@ impl<R: Read> Read for SnappyFramedDecoder<R> {
                             0x00 => {
                                 // TODO: Output size check.
                                 // TODO: Malformed data check.
+                                let crc = try!(chunk.crc());
                                 let compressed = &chunk.data[CRC_SIZE..];
                                 let data = snappy::uncompress(compressed)
                                     .expect("Snappy decompression failure");
+                                try!(check_crc(crc, &data));
                                 self.output.set_data(&data);
                                 break;
                             }
@@ -125,7 +152,9 @@ impl<R: Read> Read for SnappyFramedDecoder<R> {
                             0x01 => {
                                 // TODO: Output size check.
                                 // TODO: Malformed data check.
+                                let crc = try!(chunk.crc());
                                 let data = &chunk.data[CRC_SIZE..];
+                                try!(check_crc(crc, &data));
                                 self.output.set_data(&data);
                                 break;
                             }
@@ -151,10 +180,34 @@ impl<R: Read> Read for SnappyFramedDecoder<R> {
     }
 }
 
+#[cfg(test)]
+fn large_compressed_data(repeats: usize) -> io::Result<Vec<u8>> {
+    use std::io::Write;
+
+    use write::SnappyFramedEncoder;
+    use test_helpers::*;
+
+    // Build a large vector containing repeated text data.
+    let hunk = try!(read_file("data/arbres.txt"));
+    let data = repeat_data(&hunk, repeats);
+
+    // Compress it.
+    let mut compressed = vec!();
+    {
+        let mut compressor = try!(SnappyFramedEncoder::new(&mut compressed));
+        let written = try!(compressor.write(&data));
+        assert_eq!(data.len(), written);
+        try!(compressor.flush());
+    }
+    Ok(compressed)
+}
+
 #[test]
 fn decode_example_stream() {
     use std::fs::File;
     use dribble::DribbleReader;
+
+    use test_helpers::*;
 
     let mut compressed = File::open("data/arbres.txt.sz").unwrap();
     let mut dribble = DribbleReader::new(&mut compressed);
@@ -162,36 +215,20 @@ fn decode_example_stream() {
     let mut decompressed = vec!();
     decompressor.read_to_end(&mut decompressed).unwrap();
 
-    let mut original = File::open("data/arbres.txt").unwrap();
-    let mut expected = vec!();
-    original.read_to_end(&mut expected).unwrap();
-
+    let expected = read_file("data/arbres.txt").unwrap();
     assert_eq!(expected, decompressed);
 }
 
 #[test]
 fn encode_and_decode_large_data() {
-    use std::fs::File;
-    use std::io::{Cursor, Write};
+    use std::io::Cursor;
 
-    use write::SnappyFramedEncoder;
+    use test_helpers::*;
 
     // Build a multi-MB vector containing text data.
-    let mut f = File::open("data/arbres.txt").unwrap();
-    let mut text = vec!();
-    f.read_to_end(&mut text).unwrap();
-    let repeat = 1000;
-    let mut input = Vec::with_capacity(text.len() * repeat);
-    for _ in 0..repeat { input.extend(text.iter().cloned()); }
-
-    // Compress it.
-    let mut compressed = vec!();
-    {
-        let mut compressor = SnappyFramedEncoder::new(&mut compressed).unwrap();
-        let written = compressor.write(&input).unwrap();
-        assert_eq!(input.len(), written);
-        compressor.flush().unwrap();
-    }
+    let hunk = read_file("data/arbres.txt").unwrap();
+    let input = repeat_data(&hunk, 1000);
+    let compressed = large_compressed_data(1000).unwrap();
 
     // Decode it.
     let mut cursor = Cursor::new(&compressed as &[u8]);
@@ -199,7 +236,7 @@ fn encode_and_decode_large_data() {
     let mut decompressed = vec!();
     decompressor.read_to_end(&mut decompressed).unwrap();
 
-    // Decode it.
+    // Compare it.
     assert_eq!(input, decompressed);
 }
 
@@ -209,3 +246,26 @@ fn encode_and_decode_large_data() {
 //   - Reserved chunk types.
 //   - Bad CRC.
 //   - Overlong chunks (both compressed--two variants--and uncompressed).
+
+#[cfg(all(test, feature = "unstable"))]
+mod benches {
+    use std::io::{Cursor, Read};
+    use test::Bencher;
+
+    use super::{SnappyFramedDecoder, large_compressed_data};
+
+    #[bench]
+    fn decompress_speed(b: &mut Bencher) {
+        let data = large_compressed_data(50).unwrap();
+
+        let mut output_bytes = 0;
+        b.iter(|| {
+            let mut cursor = Cursor::new(&data as &[u8]);
+            let mut decoder = SnappyFramedDecoder::new(&mut cursor);
+            let mut output = vec!();
+            output_bytes = decoder.read_to_end(&mut output).unwrap();
+            output
+        });
+        b.bytes = output_bytes as u64;
+    }        
+}

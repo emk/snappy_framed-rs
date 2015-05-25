@@ -2,6 +2,7 @@ use snappy;
 use std::io::{self, Write};
 
 use consts::*;
+use masked_crc::*;
 
 /// Appears at the front of all Snappy framed streams.
 const STREAM_IDENTIFIER: [u8; 10] =
@@ -32,11 +33,15 @@ impl<W: Write> Write for SnappyFramedEncoder<W> {
 
             let mut header_and_crc = [0; HEADER_SIZE+CRC_SIZE];
             let chunk_len = CRC_SIZE + compressed.len();
+            let crc = masked_crc(&data);
             header_and_crc[0] = 0;
-            header_and_crc[1] = ((chunk_len & 0x0000FF)) as u8;
-            header_and_crc[2] = ((chunk_len & 0x00FF00) >> 8) as u8;
+            header_and_crc[1] = ((chunk_len & 0x0000FF)      ) as u8;
+            header_and_crc[2] = ((chunk_len & 0x00FF00) >>  8) as u8;
             header_and_crc[3] = ((chunk_len & 0xFF0000) >> 16) as u8;
-            // TODO: Generate CRC.
+            header_and_crc[4] = ((crc & 0x000000FF)      ) as u8;
+            header_and_crc[5] = ((crc & 0x0000FF00) >>  8) as u8;
+            header_and_crc[6] = ((crc & 0x00FF0000) >> 16) as u8;
+            header_and_crc[7] = ((crc & 0xFF000000) >> 24) as u8;
             try!(self.dest.write_all(&header_and_crc));
 
             try!(self.dest.write_all(&compressed));
@@ -51,16 +56,13 @@ impl<W: Write> Write for SnappyFramedEncoder<W> {
 
 #[test]
 fn encode_example_stream() {
-    use self::*;
-
-    use read::SnappyFramedDecoder;
     use dribble::DribbleWriter;
-    use std::fs::File;
     use std::io::{Cursor, Read, Write};
 
-    let mut original = File::open("data/arbres.txt").unwrap();
-    let mut expected = vec!();
-    original.read_to_end(&mut expected).unwrap();
+    use read::SnappyFramedDecoder;
+    use test_helpers::*;
+
+    let expected = read_file("data/arbres.txt").unwrap();
 
     let mut compressed = vec!();
     {
