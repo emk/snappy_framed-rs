@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/emk/snappy_framed-rs.svg?branch=master)](https://travis-ci.org/emk/snappy_framed-rs) [![Latest version](https://img.shields.io/crates/v/snappy_framed.svg)](https://crates.io/crates/snappy_framed) [![License](https://img.shields.io/crates/l/snappy_framed.svg)](https://crates.io/crates/snappy_framed)
+
 (**Work in progress:** Good enough for basic use, but may panic on corrupt
 input, and `SnappyFramedEncoder` assumes you normally `write` large
 buffers.  APIs may change before 1.0.)
