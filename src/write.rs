@@ -59,7 +59,7 @@ fn encode_example_stream() {
     use dribble::DribbleWriter;
     use std::io::{Cursor, Read, Write};
 
-    use read::SnappyFramedDecoder;
+    use read::{CrcMode, SnappyFramedDecoder};
     use test_helpers::*;
 
     let expected = read_file("data/arbres.txt").unwrap();
@@ -75,7 +75,8 @@ fn encode_example_stream() {
 
     let mut decompressed = vec!();
     let mut cursor = Cursor::new(&compressed as &[u8]);
-    let mut decompressor = SnappyFramedDecoder::new(&mut cursor);
+    let mut decompressor = SnappyFramedDecoder::new(&mut cursor,
+                                                    CrcMode::Verify);
     decompressor.read_to_end(&mut decompressed).unwrap();
 
     // Did we survive the round-trip intact?

@@ -6,6 +6,13 @@ use buffer::Buffer;
 use consts::*;
 use masked_crc::*;
 
+/// Should we verify or ignore the CRC when reading?
+#[derive(Debug, PartialEq, Eq)]
+pub enum CrcMode {
+    Verify,
+    Ignore
+}
+
 /// A framed chunk in a Snappy stream.
 #[derive(Debug)]
 struct Chunk<'a> {
@@ -113,15 +120,17 @@ impl Buffer {
 pub struct SnappyFramedDecoder<R: Read> {
     source: R,
     input: Buffer,
-    output: Buffer
+    output: Buffer,
+    mode: CrcMode
 }
 
 impl<R: Read> SnappyFramedDecoder<R> {
-    pub fn new(source: R) -> Self {
+    pub fn new(source: R, mode: CrcMode) -> Self {
         SnappyFramedDecoder{
             source: source,
             input: Buffer::new(1024*1024),
-            output: Buffer::new(MAX_UNCOMPRESSED_CHUNK)
+            output: Buffer::new(MAX_UNCOMPRESSED_CHUNK),
+            mode: mode
         }
     }
 }
@@ -143,7 +152,9 @@ impl<R: Read> Read for SnappyFramedDecoder<R> {
                                 let compressed = &chunk.data[CRC_SIZE..];
                                 let data = snappy::uncompress(compressed)
                                     .expect("Snappy decompression failure");
-                                try!(check_crc(crc, &data));
+                                if self.mode == CrcMode::Verify {
+                                    try!(check_crc(crc, &data));
+                                }
                                 self.output.set_data(&data);
                                 break;
                             }
@@ -154,7 +165,9 @@ impl<R: Read> Read for SnappyFramedDecoder<R> {
                                 // TODO: Malformed data check.
                                 let crc = try!(chunk.crc());
                                 let data = &chunk.data[CRC_SIZE..];
-                                try!(check_crc(crc, &data));
+                                if self.mode == CrcMode::Verify {
+                                    try!(check_crc(crc, &data));
+                                }
                                 self.output.set_data(&data);
                                 break;
                             }
@@ -211,7 +224,8 @@ fn decode_example_stream() {
 
     let mut compressed = File::open("data/arbres.txt.sz").unwrap();
     let mut dribble = DribbleReader::new(&mut compressed);
-    let mut decompressor = SnappyFramedDecoder::new(&mut dribble);
+    let mut decompressor = SnappyFramedDecoder::new(&mut dribble,
+                                                    CrcMode::Verify);
     let mut decompressed = vec!();
     decompressor.read_to_end(&mut decompressed).unwrap();
 
@@ -232,7 +246,8 @@ fn encode_and_decode_large_data() {
 
     // Decode it.
     let mut cursor = Cursor::new(&compressed as &[u8]);
-    let mut decompressor = SnappyFramedDecoder::new(&mut cursor);
+    let mut decompressor = SnappyFramedDecoder::new(&mut cursor,
+                                                    CrcMode::Verify);
     let mut decompressed = vec!();
     decompressor.read_to_end(&mut decompressed).unwrap();
 
@@ -252,19 +267,27 @@ mod benches {
     use std::io::{Cursor, Read};
     use test::Bencher;
 
-    use super::{SnappyFramedDecoder, large_compressed_data};
+    use super::{CrcMode, SnappyFramedDecoder, large_compressed_data};
 
     #[bench]
     fn decompress_speed(b: &mut Bencher) {
         let data = large_compressed_data(50).unwrap();
 
         let mut output_bytes = 0;
+        let mut buffer = vec![0; 128*1024];
         b.iter(|| {
-            let mut cursor = Cursor::new(&data as &[u8]);
-            let mut decoder = SnappyFramedDecoder::new(&mut cursor);
-            let mut output = vec!();
-            output_bytes = decoder.read_to_end(&mut output).unwrap();
-            output
+            output_bytes = 0;
+            {
+                let mut cursor = Cursor::new(&data as &[u8]);
+                let mut decoder = SnappyFramedDecoder::new(&mut cursor,
+                                                           CrcMode::Ignore);
+                loop {
+                    let bytes_read = decoder.read(&mut buffer).unwrap();
+                    output_bytes += bytes_read;
+                    if bytes_read == 0 { break; }
+                }
+            }
+            buffer[0]
         });
         b.bytes = output_bytes as u64;
     }        
