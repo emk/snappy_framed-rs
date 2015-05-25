@@ -50,7 +50,7 @@ inlining, which makes the profile hard to read.  You may need to add
 `#[inline(never)]` to various functions to make them show up separately on
 the report.
 
-//! [doc]: http://emk.github.io/snappy_framed-rs/snappy_framed/index.html
-//! [snappy]: http://code.google.com/p/snappy/
-//! [framed]: http://code.google.com/p/snappy/source/browse/trunk/framing_format.txt
-//! [snzip]: https://github.com/kubo/snzip
+[doc]: http://emk.github.io/snappy_framed-rs/snappy_framed/index.html
+[snappy]: http://code.google.com/p/snappy/
+[framed]: http://code.google.com/p/snappy/source/browse/trunk/framing_format.txt
+[snzip]: https://github.com/kubo/snzip
