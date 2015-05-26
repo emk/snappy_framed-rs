@@ -1,0 +1,1 @@
+initSidebarItems({"enum":[["CrcMode","Should we verify or ignore the CRC when reading?"]],"struct":[["SnappyFramedDecoder","Decode a stream containing Snappy-compressed frames."]]});

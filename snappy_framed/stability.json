@@ -1,0 +1,1 @@
+{"name":"snappy_framed","counts":{"deprecated":0,"unstable":0,"stable":5,"unmarked":12},"submodules":[{"name":"read","counts":{"deprecated":0,"unstable":0,"stable":4,"unmarked":7},"submodules":[]},{"name":"write","counts":{"deprecated":0,"unstable":0,"stable":1,"unmarked":4},"submodules":[]}]}
